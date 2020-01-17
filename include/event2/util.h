@@ -305,6 +305,9 @@ extern "C" {
  * A type wide enough to hold the output of "socket()" or "accept()".  On
  * Windows, this is an intptr_t; elsewhere, it is an int. */
 #ifdef _WIN32
+// intptr_t可以持有一个指针值的整型变量，是为了跨平台，其长度总是所在平台的位数，所以用来存放地址
+// 如64位系统上指针是64位，8字节。对于Linux目前支持的所有平台上，long类型的长度和指针的长度是一致的，
+// 所以Linux上强转指针时可用(long*)ptr, (long*)ptr+1则表示移动到下一指针，此时64位系统上(int*)ptr+1则会出错(32位则不会)。C++通过对象虚表地址获取虚函数就容易出现这个疏忽
 #define evutil_socket_t intptr_t
 #else
 #define evutil_socket_t int

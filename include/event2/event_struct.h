@@ -107,9 +107,11 @@ struct event;
 struct event_callback {
 	TAILQ_ENTRY(event_callback) evcb_active_next;
 	short evcb_flags;
+	// 优先级，值越小优先级越大(和Linux进程的priority方向类似)
 	ev_uint8_t evcb_pri;	/* smaller numbers are higher priority */
 	ev_uint8_t evcb_closure;
 	/* allows us to adopt for different types of events */
+	// 函数指针组成的联合体，允许对不同类型的事件采用不同函数指针(64位系统下8字节)
         union {
 		void (*evcb_callback)(evutil_socket_t, short, void *);
 		void (*evcb_selfcb)(struct event_callback *, void *);
@@ -121,6 +123,7 @@ struct event_callback {
 
 struct event_base;
 struct event {
+	// 回调函数信息，里面包含一个函数指针联合体
 	struct event_callback ev_evcallback;
 
 	/* for managing timeouts */

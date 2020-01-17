@@ -2236,15 +2236,23 @@ event_base_get_running_event(struct event_base *base)
 	return ev;
 }
 
+/* 
+ * 创建一个event结构体，返回结构体指针
+ * cb是回调函数，参数是event_new的入参fd句柄和events事件类型，加一个void*指针，可传入自定义信息
+ * 
+*/
 struct event *
 event_new(struct event_base *base, evutil_socket_t fd, short events, void (*cb)(evutil_socket_t, short, void *), void *arg)
 {
 	struct event *ev;
+	// mm_malloc()调用到libevent中定义的内存分配函数，原型如下：static void *(*mm_malloc_fn_)(size_t sz) = NULL;
+	// 其初始化为NULL，若没有自定义(mm_malloc_fn_非NULL)则使用的是malloc()
 	ev = mm_malloc(sizeof(struct event));
 	if (ev == NULL)
 		return (NULL);
+	// event_assign() 用于给 event 结构体赋值
 	if (event_assign(ev, base, fd, events, cb, arg) < 0) {
-		mm_free(ev);
+		mm_free(ev); //若未自定义则用free()
 		return (NULL);
 	}
 

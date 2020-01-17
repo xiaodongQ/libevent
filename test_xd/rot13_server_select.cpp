@@ -2,6 +2,8 @@
 #include <netinet/in.h>
 /* For socket functions */
 #include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 /* For fcntl */
 #include <fcntl.h>
 /* for select */
@@ -46,7 +48,7 @@ struct fd_state {
 struct fd_state *
 alloc_fd_state(void)
 {
-    struct fd_state *state = malloc(sizeof(struct fd_state));
+    struct fd_state *state = (fd_state *)malloc(sizeof(struct fd_state));
     if (!state)
         return NULL;
     state->buffer_used = state->n_written = state->writing =
@@ -151,6 +153,9 @@ run(void)
 #ifndef WIN32
     {
         int one = 1;
+        // SO_REUSEADDR用于对TCP套接字处于TIME_WAIT状态下的socket，允许重复绑定使用。
+        // 一般server程序总是应该在调用bind()之前设置SO_REUSEADDR套接字选项。
+        // [How do SO_REUSEADDR and SO_REUSEPORT differ?](https://stackoverflow.com/questions/14388706/how-do-so-reuseaddr-and-so-reuseport-differ)
         setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
     }
 #endif
@@ -173,7 +178,7 @@ run(void)
     while (1) {
         maxfd = listener;
 
-        // 宏FD_ZERO清除文件描述符集fdset中的所有位(既把所有位都设置为0)
+        // 宏FD_ZERO清理文件描述符集fdset
         FD_ZERO(&readset);
         FD_ZERO(&writeset);
         FD_ZERO(&exset);
@@ -220,6 +225,7 @@ run(void)
             } else if (fd > FD_SETSIZE) { // 按1024算，接收的fd不能大于1024?
                 close(fd);
             } else {
+                printf("accept request[ip:%s, port:%d]...\n", inet_ntoa(((struct sockaddr_in*)&ss)->sin_addr), ntohs(((struct sockaddr_in*)&ss)->sin_port));
                 // 设置接收fd为非阻塞，并在读/写该fd时判断 errno，如果是 EAGAIN 则本次read/write/send/recv不报错(体现在do_read/do_write函数中)
                 // man FD_SET，BUGS章节。为了防止使用self-pipe管道时导致可能的阻塞，当向一个满的pipe管道写或者从一个空的pipe管道读，设置为非阻塞IO
                 make_nonblocking(fd);

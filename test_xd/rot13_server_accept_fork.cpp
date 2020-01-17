@@ -3,6 +3,9 @@
 /* For socket functions */
 #include <sys/socket.h>
 
+#include <fcntl.h>
+#include <sys/wait.h>
+
 #include <unistd.h>
 #include <string.h>
 #include <stdio.h>
@@ -46,7 +49,7 @@ child(int fd)
             break;
         }
 
-        printf("%c", ch);
+        // printf("%c", ch);
         /* We do this test to keep the user from overflowing the buffer. */
         if (outbuf_used < sizeof(outbuf)) {
             outbuf[outbuf_used++] = rot13_char(ch);
@@ -55,7 +58,7 @@ child(int fd)
         if (ch == '\n') {
             send(fd, outbuf, outbuf_used, 0);
             outbuf_used = 0;
-            printf("over\n");
+            // printf("over\n");
             continue;
         }
     }
@@ -92,8 +95,8 @@ run(void)
     }
 
 
-
     while (1) {
+        int status = 0;
         struct sockaddr_storage ss;
         socklen_t slen = sizeof(ss);
         int fd = accept(listener, (struct sockaddr*)&ss, &slen);
@@ -101,9 +104,15 @@ run(void)
             perror("accept");
         } else {
             if (fork() == 0) {
+                // 子进程中是否需要对 listener 处理?
                 child(fd);
                 exit(0);
             }
+            // 获取子进程状态信息，不获取则会造成僵尸进程
+            wait(&status);
+            // 处理完成后关闭句柄，否则客户端处理完后关闭连接，服务端有大量CLOSE_WAIT，放在主线程中close
+            close(fd);
+            fd = -1;
         }
     }
 }

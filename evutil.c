@@ -508,11 +508,13 @@ evutil_make_socket_nonblocking(evutil_socket_t fd)
 	}
 #else
 	{
+		//  F_GETFL 先获取文件状态标志(file status flags)
 		int flags;
 		if ((flags = fcntl(fd, F_GETFL, NULL)) < 0) {
 			event_warn("fcntl(%d, F_GETFL)", fd);
 			return -1;
 		}
+		// 若O_NONBLOCK 位已设置则不需要进行SET
 		if (!(flags & O_NONBLOCK)) {
 			if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
 				event_warn("fcntl(%d, F_SETFL)", fd);
