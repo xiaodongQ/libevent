@@ -67,7 +67,7 @@ int main(int c, char **v)
 			close(fd);
 			return 1;
 		}
-		printf("%s", buf);
+		printf("get:[%s], result:%d\n", buf, result);
 	}
 
     close(fd);

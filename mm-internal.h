@@ -73,6 +73,7 @@ void *event_mm_realloc_(void *p, size_t sz);
 EVENT2_EXPORT_SYMBOL
 void event_mm_free_(void *p);
 #define mm_malloc(sz) event_mm_malloc_(sz)
+// 自定义了 mm_malloc_fn_ 则利用它来实现calloc，未定义则用标准calloc
 #define mm_calloc(count, size) event_mm_calloc_((count), (size))
 #define mm_strdup(s) event_mm_strdup_(s)
 #define mm_realloc(p, sz) event_mm_realloc_((p), (sz))

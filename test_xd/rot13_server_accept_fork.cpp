@@ -2,6 +2,7 @@
 #include <netinet/in.h>
 /* For socket functions */
 #include <sys/socket.h>
+#include <arpa/inet.h>
 
 #include <fcntl.h>
 #include <sys/wait.h>
@@ -62,7 +63,7 @@ child(int fd)
             continue;
         }
     }
-    printf("get: %s\n", outbuf);
+    // printf("get: %s\n", outbuf);
 }
 
 void
@@ -103,6 +104,7 @@ run(void)
         if (fd < 0) {
             perror("accept");
         } else {
+            printf("accept request[ip:%s, port:%d]...\n", inet_ntoa(((struct sockaddr_in*)&ss)->sin_addr), ntohs(((struct sockaddr_in*)&ss)->sin_port));
             if (fork() == 0) {
                 // 子进程中是否需要对 listener 处理?
                 child(fd);

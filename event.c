@@ -3532,12 +3532,14 @@ event_mm_malloc_(size_t sz)
 		return malloc(sz);
 }
 
+// 自定义了 mm_malloc_fn_ 则利用它来实现calloc，未定义则用标准calloc
 void *
 event_mm_calloc_(size_t count, size_t size)
 {
 	if (count == 0 || size == 0)
 		return NULL;
 
+	// 若实现了函数指针 mm_malloc_fn_ 则用其分配
 	if (mm_malloc_fn_) {
 		size_t sz = count * size;
 		void *p = NULL;
@@ -3549,7 +3551,7 @@ event_mm_calloc_(size_t count, size_t size)
 	} else {
 		void *p = calloc(count, size);
 #ifdef _WIN32
-		/* Windows calloc doesn't reliably set ENOMEM */
+		/* Windows calloc doesn't reliably set ENOMEM */ // Windows不关联设置error，下面手动设置
 		if (p == NULL)
 			goto error;
 #endif

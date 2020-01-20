@@ -10,7 +10,14 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
+#include <sys/syscall.h>
+// 统计时间
+#include <time.h>
 
+#define REQ_NUM 10000
+int g_reqNum = REQ_NUM;
+pthread_mutex_t g_mtx = PTHREAD_MUTEX_INITIALIZER;
 int do_process()
 {
      const char query[] =
@@ -70,10 +77,10 @@ int do_process()
 			return 1;
 		}
         recvsize += result;
-		printf("buf:[%s], len:%d\n", buf, strlen(buf));
+		// printf("buf:[%s], len:%d\n", buf, strlen(buf));
         if (recvsize >= remaining)
         {
-            printf("recv end\n");
+            // printf("recv end\n");
             break;
         }
 	}
@@ -82,17 +89,70 @@ int do_process()
     return 0;
 }
 
-#define REQ_NUM 1026
+#define gettid() syscall(__NR_gettid)
+void* thread_func(void*)
+{
+    while(1)
+    {
+        pthread_mutex_lock(&g_mtx);
+        printf("cur:%d, g_reqNum:%d\n", REQ_NUM-g_reqNum, g_reqNum);
+        if (g_reqNum <= 0)
+        {
+            pthread_mutex_unlock(&g_mtx);
+            printf("exit thread[%d]\n", gettid());
+            return NULL;
+        }
+        --g_reqNum;
+        pthread_mutex_unlock(&g_mtx);
+       
+        do_process();
+        usleep(100);
+    }
+    return NULL;
+}
+
 int main(int c, char **v)
 {
-    int num = REQ_NUM;
-    while (num > 0)
+    clock_t begin = clock();
+    // 创建10个线程发送客户端请求
+    for (int i=0; i<10; i++)
     {
-        printf("index:%d\n", REQ_NUM-num);
-        --num;
-        do_process();
-        usleep(5000);
+        printf("create [%d]thread\n", i);
+        pthread_t tid;
+        pthread_attr_t attr;
+        if (0 != pthread_attr_init(&attr))
+        {
+            perror("pthread_atter_init");
+            return -1;
+        }
+        if (0 != pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED))
+        {
+            perror("pthread_attr_setdetachstate");
+            return -1;
+        }
+        if (0 != pthread_create(&tid, &attr, thread_func, NULL))
+        {
+            perror("pthread_create");
+            return -1;
+        }
     }
+
+    while(1)
+    {
+        printf("main g_reqNum:%d\n", g_reqNum);
+        pthread_mutex_lock(&g_mtx);
+        if (g_reqNum <= 0)
+        {
+            // break时的解锁，容易忘记
+            pthread_mutex_unlock(&g_mtx);
+            break;
+        }
+        pthread_mutex_unlock(&g_mtx);
+        usleep(1000);
+    }
+    clock_t end = clock();
+    printf("cost:%f ms\n", (double)(end-begin)/CLOCKS_PER_SEC*1000);
+
     return 0;
 }
 
