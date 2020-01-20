@@ -167,3 +167,4 @@ rules.ninja
 # encrypted files for travis-ci
 /.github/*
 !/.github/*.enc
+/build/Testing/Temporary
