@@ -12,8 +12,10 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <sys/syscall.h>
-// 统计时间
+// 统计时间 clock
 #include <time.h>
+// gettimeofday
+#include <sys/time.h>
 
 #define REQ_NUM 10000
 int g_reqNum = REQ_NUM;
@@ -113,6 +115,11 @@ void* thread_func(void*)
 
 int main(int c, char **v)
 {
+    struct timeval tv;
+    memset(&tv, 0, sizeof(tv));
+    gettimeofday(&tv,NULL);
+    long timems1 = tv.tv_sec * 1000 + tv.tv_usec / 1000;
+
     clock_t begin = clock();
     // 创建10个线程发送客户端请求
     for (int i=0; i<10; i++)
@@ -148,10 +155,15 @@ int main(int c, char **v)
             break;
         }
         pthread_mutex_unlock(&g_mtx);
-        usleep(1000);
+        usleep(100000);
     }
     clock_t end = clock();
-    printf("cost:%f ms\n", (double)(end-begin)/CLOCKS_PER_SEC*1000);
+
+    memset(&tv, 0, sizeof(tv));
+    gettimeofday(&tv,NULL);
+    long timems2 = tv.tv_sec * 1000 + tv.tv_usec / 1000;
+    // 注意占位符，%f改成%d则会影响后一个变量打印
+    printf("clock() cost:%f ms, gettimeofday():%ld ms\n", (double)(end-begin)/CLOCKS_PER_SEC*1000, timems2-timems1);
 
     return 0;
 }

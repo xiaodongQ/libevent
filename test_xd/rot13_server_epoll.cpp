@@ -6,8 +6,8 @@
 #include <netinet/in.h>
 /* For fcntl */
 #include <fcntl.h>
-/* for poll */
-#include <poll.h>
+/* for epoll */
+#include <sys/epoll.h>
 
 #include <assert.h>
 #include <unistd.h>
@@ -137,7 +137,8 @@ run(void)
     // 指针数组，成员都是指针的数组，通过是否NULL来判断是否有成员
     struct fd_state *state[FD_SETSIZE];
     struct sockaddr_in sin;
-    struct pollfd *fdlist = NULL;
+    int epfd = 0;
+    struct epoll_event ev, evs[20];
     int i = 0;
 
     sin.sin_family = AF_INET;
@@ -147,20 +148,6 @@ run(void)
     for (i = 0; i < FD_SETSIZE; ++i)
     {
         state[i] = NULL;
-    }
-
-    // 初始化感兴趣pollfd的内存
-    fdlist = (struct pollfd *)calloc(FD_SETSIZE, sizeof(struct pollfd));
-    if (NULL == fdlist)
-    {
-        perror("calloc");
-        return;
-    }
-    for (i = 0; i < FD_SETSIZE; ++i)
-    {
-        fdlist[i].fd = -1;
-        fdlist[i].events = 0;
-        fdlist[i].revents = 0;
     }
 
     listener = socket(AF_INET, SOCK_STREAM, 0);
@@ -175,79 +162,116 @@ run(void)
 
     if (bind(listener, (struct sockaddr*)&sin, sizeof(sin)) < 0) {
         perror("bind");
-        free(fdlist);
-        fdlist = NULL;
         return;
     }
 
     if (listen(listener, 16)<0) {
         perror("listen");
-        free(fdlist);
-        fdlist = NULL;
         return;
     }
     printf("listen[%d]...\n", ntohs(sin.sin_port));
+    // 创建epoll句柄
+    epfd = epoll_create1(0);
+    if (epfd < 0)
+    {
+        perror("epoll_create1");
+        return;
+    }
+    // 把监听的fd加到epfd中监控
+    memset(&ev, 0, sizeof(ev));
+    ev.events = EPOLLIN | EPOLLET;
+    ev.data.fd = listener;
+    if (0 != epoll_ctl(epfd, EPOLL_CTL_ADD, listener, &ev))
+    {
+        perror("epoll_ctl");
+        close(epfd);
+        return;
+    }
    
-    fdlist[listener].fd = listener;
-    fdlist[listener].events = POLLIN;  //设置需要监听的信号
     while (1) {
-        // 第三个参数是等待时间 ms，若为0则poll立即返回，若为-1则阻塞到有事件到来或调用被打断
-        if (poll(fdlist, FD_SETSIZE, -1) < 0) {
-            perror("poll");
-            free(fdlist);
-            fdlist = NULL;
-            return;
-        }
-
-        // FD_ISSET来检测(返回true) 文件描述符集fdset(此处为readset) 中是否存在文件描述符fd(对应描述符listener)
-        // 主线程创建的监听fd也用select来检测
-        if (fdlist[listener].revents & POLLIN) {
-            struct sockaddr_storage ss;
-            socklen_t slen = sizeof(ss);
-            int fd = accept(listener, (struct sockaddr*)&ss, &slen);
-            if (fd < 0) {
-                perror("accept");
-            } else if (fd > FD_SETSIZE) { // 接收的fd不能大于FD_SETSIZE，并不是端口
-                close(fd);
-            } else {
-                printf("accept request[ip:%s, port:%d]...\n", inet_ntoa(((struct sockaddr_in*)&ss)->sin_addr), ntohs(((struct sockaddr_in*)&ss)->sin_port));
-                // 设置接收fd为非阻塞，并在读/写该fd时判断 errno，如果是 EAGAIN 则本次read/write/send/recv不报错(体现在do_read/do_write函数中)
-                make_nonblocking(fd);
-                state[fd] = alloc_fd_state();
-                assert(state[fd]);/*XXX*/
-                // 把感兴趣的socket加到pollfd中，传给poll
-                fdlist[fd].fd = fd;
-                fdlist[fd].events = POLLIN | POLLRDHUP | POLLOUT;
+        int fdnum = 0;
+        fdnum = epoll_wait(epfd, evs, 20, 0);
+        for (i=0; i < fdnum; i++)
+        {
+            if (evs[i].data.fd == listener)
+            {
+                // 由于使用了边缘触发(该模式只支持非阻塞io)，事件只通知一次，此处需要使用循环
+                for ( ; ; )
+                {
+                    struct sockaddr_storage ss;
+                    socklen_t slen = sizeof(ss);
+                    int fd = accept(listener, (struct sockaddr*)&ss, &slen);
+                    if (fd < 0) {
+                        if (errno == EAGAIN || errno == EWOULDBLOCK)
+                        {
+                            // printf("non block return\n");
+                        }
+                        else
+                        {
+                            perror("accept");
+                        }
+                        
+                        // 由于listener设置为非阻塞(non-block)，读取结束则会报错退出
+                        break;
+                    } else {
+                        printf("accept request[ip:%s, port:%d]...\n", inet_ntoa(((struct sockaddr_in*)&ss)->sin_addr), ntohs(((struct sockaddr_in*)&ss)->sin_port));
+                        // 设置接收fd为非阻塞，并在读/写该fd时判断 errno，如果是 EAGAIN 则本次read/write/send/recv不报错(体现在do_read/do_write函数中)
+                        make_nonblocking(fd);
+                        // 此处需要重构，poll和epoll并不受句柄数量限制(能够处理FD上限是最大可以打开文件的数目cat /proc/sys/fs/file-max)
+                        state[fd] = alloc_fd_state();
+                        assert(state[fd]);/*XXX*/
+                        // 添加到epfd中监控
+                        memset(&ev, 0, sizeof(ev));
+                        ev.events = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLRDHUP;
+                        ev.data.fd = fd;
+                        if (0 != epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev))
+                        {
+                            perror("epoll_ctl");
+                            close(epfd);
+                            return;
+                        }
+                    }
+                }
             }
-        }
-
-        for (i=0; i < FD_SETSIZE; ++i) {
-            int r = 0;
-            if (i == listener)
-                continue;
-
-            // 遍历判断accept后新建的描述符(除监听fd外) 是否在read set集中(即是否准备好读取)
-            if (fdlist[i].revents & POLLIN) {
-                r = do_read(i, state[i]); // 和do_write一样其中都有非阻塞情况errno的判断
-            }
-            // 读取成功后才判断是否准备好write，是则write
-            if (r == 0 && fdlist[i].revents & POLLOUT) {
-                r = do_write(i, state[i]);
-                // printf("do write return:%d\n", r);
-            }
-
-            if (fdlist[i].revents & POLLRDHUP) {
-                free_fd_state(state[i]);
-                state[i] = NULL;
-                close(i);
-                // 清理pollfd中指定socket
-                fdlist[i].fd = -1;
-                fdlist[i].events = 0;
+            else
+            {
+                // 边缘触发模式，循环处理
+                int r = 0;
+                int done = 0;
+                for ( ; ; )
+                {
+                    if (evs[i].events & EPOLLIN)
+                    {
+                        r = do_read(evs[i].data.fd, state[evs[i].data.fd]);
+                        if (r != 0)
+                        {
+                            break;
+                        }
+                    }
+                    if (r == 0 && evs[i].events & EPOLLOUT)
+                    {
+                        r = do_write(evs[i].data.fd, state[evs[i].data.fd]);
+                        if (r == 0)
+                        {
+                            break;
+                        }
+                    }
+                }
+                if (evs[i].events & EPOLLRDHUP)
+                {
+                    free_fd_state(state[evs[i].data.fd]);
+                    state[evs[i].data.fd] = NULL;
+                    // EPOLL_CTL_DEL时最后一个参数会忽略，kernel2.6.9之前需要一个非NULL(参考man epoll_ctl)
+                    if (0 != epoll_ctl(epfd, EPOLL_CTL_DEL, evs[i].data.fd, NULL))
+                    {
+                        perror("epoll_ctl");
+                    }
+                    close(evs[i].data.fd);
+                }
             }
         }
     }
-    free(fdlist);
-    fdlist = NULL;
+    close(epfd);
 }
 
 int
