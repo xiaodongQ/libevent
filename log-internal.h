@@ -49,6 +49,7 @@ extern "C" {
 
 #ifdef EVENT_DEBUG_LOGGING_ENABLED
 EVENT2_CORE_EXPORT_SYMBOL extern ev_uint32_t event_debug_logging_mask_;
+// 若定义了开启debug模式的宏 EVENT_DEBUG_LOGGING_ENABLED，则定义获取屏蔽字的函数
 #define event_debug_get_logging_mask_() (event_debug_logging_mask_)
 #else
 #define event_debug_get_logging_mask_() (0)

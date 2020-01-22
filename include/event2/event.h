@@ -708,6 +708,7 @@ void event_base_free_nofinalize(struct event_base *);
 
 /* Obsolete names: these are deprecated, but older programs might use them.
  * They violate the reserved-identifier namespace. */
+// 这些宏被启用，兼容老程序，未来版本可能移除
 #define _EVENT_LOG_DEBUG EVENT_LOG_DEBUG
 #define _EVENT_LOG_MSG EVENT_LOG_MSG
 #define _EVENT_LOG_WARN EVENT_LOG_WARN
@@ -729,6 +730,8 @@ typedef void (*event_log_cb)(int severity, const char *msg);
   NOTE: The function you provide *must not* call any other libevent
   functionality.  Doing so can produce undefined behavior.
   */
+// 通过该函数将自定义的日志记录函数设置给全局函数，不设置则默认为NULL: static event_log_cb log_fn = NULL;
+// 默认为NULL时，输出到stderr: (void)fprintf(stderr, "[%s] %s\n", severity_str, msg);
 EVENT2_EXPORT_SYMBOL
 void event_set_log_callback(event_log_cb cb);
 
@@ -751,6 +754,7 @@ typedef void (*event_fatal_cb)(int err);
  Libevent will (almost) always log an EVENT_LOG_ERR message before calling
  this function; look at the last log message to see why Libevent has died.
  */
+// 可以通过该接口设置自定义的错误处理函数(重载)
 EVENT2_EXPORT_SYMBOL
 void event_set_fatal_callback(event_fatal_cb cb);
 
@@ -771,6 +775,7 @@ void event_set_fatal_callback(event_fatal_cb cb);
    "EVENT_DBG_ALL" to turn debugging logs on, or "EVENT_DBG_NONE" to turn
    debugging logs off.
  */
+// 用来设置是否开启debug日志，送上面定义的宏 EVENT_DBG_ALL 开启，EVENT_DBG_NONE 关闭
 EVENT2_EXPORT_SYMBOL
 void event_enable_debug_logging(ev_uint32_t which);
 
@@ -1512,6 +1517,7 @@ EVENT2_EXPORT_SYMBOL
 const struct timeval *event_base_init_common_timeout(struct event_base *base,
     const struct timeval *duration);
 
+// 控制是否允许自定义内存管理函数
 #if !defined(EVENT__DISABLE_MM_REPLACEMENT) || defined(EVENT_IN_DOXYGEN_)
 /**
  Override the functions that Libevent uses for memory management.
@@ -1520,6 +1526,7 @@ const struct timeval *event_base_init_common_timeout(struct event_base *base,
  free to allocate memory.  Passing replacements for those functions to
  event_set_mem_functions() overrides this behavior.
 
+//注意所有Libevent返回的内存都是通过下面替换的函数分配的，而不是直接用malloc()和realloc()，注意配套使用
  Note that all memory returned from Libevent will be allocated by the
  replacement functions rather than by malloc() and realloc().  Thus, if you
  have replaced those functions, it will not be appropriate to free() memory
@@ -1535,6 +1542,7 @@ const struct timeval *event_base_init_common_timeout(struct event_base *base,
  @param realloc_fn A replacement for realloc
  @param free_fn A replacement for free.
  **/
+// 设置自定义内存管理函数
 EVENT2_EXPORT_SYMBOL
 void event_set_mem_functions(
 	void *(*malloc_fn)(size_t sz),
@@ -1542,6 +1550,7 @@ void event_set_mem_functions(
 	void (*free_fn)(void *ptr));
 /** This definition is present if Libevent was built with support for
     event_set_mem_functions() */
+// 可通过检查该宏来判断是否开启了 event_set_mem_functions 函数(预编译中函数和宏同时定义)
 #define EVENT_SET_MEM_FUNCTIONS_IMPLEMENTED
 #endif
 

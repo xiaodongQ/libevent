@@ -39,9 +39,13 @@ struct event_base;
 #include "mm-internal.h"
 #include "evthread-internal.h"
 
+// 用于创建锁时标识锁的属性。调用 evthread_use_pthreads_with_flags 设置使用pthread时，会通过 pthread_mutexattr_settype 设置锁的类型
+// 缺省的互斥锁类型属性是 PTHREAD_MUTEX_DEFAULT(重复锁定将产生不确定的行为，可man pthread_mutex_lock查看其他类型锁)
 static pthread_mutexattr_t attr_default;
+// 用于可重入锁， PTHREAD_MUTEX_RECURSIVE(相同线程可重复锁定，加锁解锁次数要配套)
 static pthread_mutexattr_t attr_recursive;
 
+// 在内存中创建并初始化一把锁(不再使用时需要释放内存。根据传入的锁类型判断初始化时是否使用 可重入锁对应的属性)
 static void *
 evthread_posix_lock_alloc(unsigned locktype)
 {
@@ -58,6 +62,7 @@ evthread_posix_lock_alloc(unsigned locktype)
 	return lock;
 }
 
+// 销毁锁(除了destory锁外，还释放存储它的内存)
 static void
 evthread_posix_lock_free(void *lock_, unsigned locktype)
 {
@@ -66,6 +71,7 @@ evthread_posix_lock_free(void *lock_, unsigned locktype)
 	mm_free(lock);
 }
 
+// 加锁，可指定是否trylock模式
 static int
 evthread_posix_lock(unsigned mode, void *lock_)
 {
@@ -76,6 +82,7 @@ evthread_posix_lock(unsigned mode, void *lock_)
 		return pthread_mutex_lock(lock);
 }
 
+// 解锁
 static int
 evthread_posix_unlock(unsigned mode, void *lock_)
 {
@@ -83,6 +90,10 @@ evthread_posix_unlock(unsigned mode, void *lock_)
 	return pthread_mutex_unlock(lock);
 }
 
+// 获取线程id
+// 注意使用的是 pthread_self()，返回的id是由POSIX pthread库内部提供的，只在进程内部有意义，
+// 无法关联操作系统的任务调度之类的信息，比方说在/proc查找不到关于pthread_t得到的task。
+// 若要获取top中看到的线程id，则可用gettid()获取，该函数在glibc中并没有封装，需要用syscall方式调用：#define gettid() syscall(__NR_gettid)
 static unsigned long
 evthread_posix_get_id(void)
 {
@@ -101,6 +112,7 @@ evthread_posix_get_id(void)
 	return (unsigned long)r.id;
 }
 
+// 创建条件变量并初始化
 static void *
 evthread_posix_cond_alloc(unsigned condflags)
 {
@@ -161,6 +173,7 @@ evthread_posix_cond_wait(void *cond_, void *lock_, const struct timeval *tv)
 	}
 }
 
+// 设置pthreads相关回调函数
 int
 evthread_use_pthreads_with_flags(int flags)
 {
@@ -197,8 +210,11 @@ evthread_use_pthreads_with_flags(int flags)
 			return -1;
 	}
 
+	// 设置互斥量相关的回调函数，该函数实现是在evthread.c中
 	evthread_set_lock_callbacks(&cbs);
+	// 设置条件变量相关的回调函数
 	evthread_set_condition_callbacks(&cond_cbs);
+	// 设置获取线程id回调函数(pthread_self()对应的id)
 	evthread_set_id_callback(evthread_posix_get_id);
 	return 0;
 }

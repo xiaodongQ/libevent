@@ -60,8 +60,10 @@
 static void event_log(int severity, const char *msg);
 static void event_exit(int errcode) EV_NORETURN;
 
+// 错误处理函数，未自定义
 static event_fatal_cb fatal_fn = NULL;
 
+// 控制是否开启DEBUG模式
 #ifdef EVENT_DEBUG_LOGGING_ENABLED
 #ifdef USE_DEBUG
 #define DEFAULT_MASK EVENT_DBG_ALL
@@ -86,16 +88,19 @@ event_set_fatal_callback(event_fatal_cb cb)
 	fatal_fn = cb;
 }
 
+// 没有自定义错误处理函数则使用 exit() 或者 abrt()来终止程序(根据错误码区分)
 static void
 event_exit(int errcode)
 {
 	if (fatal_fn) {
 		fatal_fn(errcode);
+		// 自定义的错误处理函数不应该再把控制权交给Libevent(即函数中就应该终止)，下面的语句不应该会调到
+		// 函数中也不应该调用Libevent的函数，可能出现未定义行为
 		exit(errcode); /* should never be reached */
 	} else if (errcode == EVENT_ERR_ABORT_)
-		abort();
+		abort(); // 直接终止程序，只是关闭打开的流
 	else
-		exit(errcode);
+		exit(errcode); // 终止前清理所有static和global对象，关闭流，关闭前以相反顺序执行atexit()注册的函数
 }
 
 void
@@ -183,12 +188,14 @@ event_debugx_(const char *fmt, ...)
 	va_end(ap);
 }
 
+// 将 event_log 进行封装，日志记录都调用该函数
 void
 event_logv_(int severity, const char *errstr, const char *fmt, va_list ap)
 {
 	char buf[1024];
 	size_t len;
 
+	// 定义了 EVENT_DEBUG_LOGGING_ENABLED 宏才使能DEBUG等级
 	if (severity == EVENT_LOG_DEBUG && !event_debug_get_logging_mask_())
 		return;
 
@@ -207,6 +214,7 @@ event_logv_(int severity, const char *errstr, const char *fmt, va_list ap)
 	event_log(severity, buf);
 }
 
+// 日志记录函数(没有自定义/重载一个新的函数则按默认行为记录日志 stderr)
 static event_log_cb log_fn = NULL;
 
 void
@@ -215,6 +223,7 @@ event_set_log_callback(event_log_cb cb)
 	log_fn = cb;
 }
 
+// 内部使用。实际做记录操作的函数。若有自定义的log_fn(非NULL)，则将等级和消息传入其中处理；若没有自定义(即默认NULL)则输出到stderr
 static void
 event_log(int severity, const char *msg)
 {

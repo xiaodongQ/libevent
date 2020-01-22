@@ -3516,10 +3516,14 @@ event_get_method(void)
 }
 
 #ifndef EVENT__DISABLE_MM_REPLACEMENT
+// 自定义 malloc，若未自定义(即该全局函数指针为NULL)，则使用malloc()
 static void *(*mm_malloc_fn_)(size_t sz) = NULL;
+// 自定义 realloc
 static void *(*mm_realloc_fn_)(void *p, size_t sz) = NULL;
+// 自定义 free
 static void (*mm_free_fn_)(void *p) = NULL;
 
+// malloc分配内存，全局函数指针非NULL则使用自定义分配函数，否则使用malloc
 void *
 event_mm_malloc_(size_t sz)
 {
@@ -3532,7 +3536,7 @@ event_mm_malloc_(size_t sz)
 		return malloc(sz);
 }
 
-// 自定义了 mm_malloc_fn_ 则利用它来实现calloc，未定义则用标准calloc
+// calloc 分配内存，全局函数指针非NULL则使用自定义分配函数，否则使用calloc
 void *
 event_mm_calloc_(size_t count, size_t size)
 {
@@ -3547,11 +3551,12 @@ event_mm_calloc_(size_t count, size_t size)
 			goto error;
 		p = mm_malloc_fn_(sz);
 		if (p)
-			return memset(p, 0, sz);
+			return memset(p, 0, sz); // malloc后的内存需要清零初始化memset/bzero
 	} else {
 		void *p = calloc(count, size);
 #ifdef _WIN32
-		/* Windows calloc doesn't reliably set ENOMEM */ // Windows不关联设置error，下面手动设置
+		/* Windows calloc doesn't reliably set ENOMEM */
+		// Window分配失败不关联设置errno，手动进行设置
 		if (p == NULL)
 			goto error;
 #endif
@@ -3563,6 +3568,7 @@ error:
 	return NULL;
 }
 
+// 使用自定义的mm_malloc_fn_ 来实现字符串的拷贝(新分配一份内存，使用完需要free或自定义函数释放)，若未自定义则用strdup(Linux下)
 char *
 event_mm_strdup_(const char *str)
 {
@@ -3576,9 +3582,10 @@ event_mm_strdup_(const char *str)
 		void *p = NULL;
 		if (ln == EV_SIZE_MAX)
 			goto error;
+		// 新malloc内存，此处对字符串strlen后的长度+1，最后一位'\0'
 		p = mm_malloc_fn_(ln+1);
 		if (p)
-			return memcpy(p, str, ln+1);
+			return memcpy(p, str, ln+1); // 内存拷贝
 	} else
 #ifdef _WIN32
 		return _strdup(str);
@@ -3591,6 +3598,10 @@ error:
 	return NULL;
 }
 
+// realloc 重新分配内存，全局函数指针非NULL则使用自定义分配函数，否则使用realloc
+// void *realloc(void *ptr, size_t size); 改变ptr指向内存块的大小，原先长度范围的内容不变，若有新内存则新长度部分内存是没有被初始化的
+// realloc()返回一个指向新分配内存的指针，对任何对象都进行了适当的对齐，该指针指向位置可能和ptr原位置不同
+// 若ptr是NULL，则和malloc(size)效果一样；若size是0则ptr非NULL，则和free(ptr)效果一样
 void *
 event_mm_realloc_(void *ptr, size_t sz)
 {
@@ -3600,6 +3611,7 @@ event_mm_realloc_(void *ptr, size_t sz)
 		return realloc(ptr, sz);
 }
 
+// 配套的内存释放
 void
 event_mm_free_(void *ptr)
 {
@@ -3609,6 +3621,7 @@ event_mm_free_(void *ptr)
 		free(ptr);
 }
 
+// 设置自定义内存管理函数
 void
 event_set_mem_functions(void *(*malloc_fn)(size_t sz),
 			void *(*realloc_fn)(void *ptr, size_t sz),
